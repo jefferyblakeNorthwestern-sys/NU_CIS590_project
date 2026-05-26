@@ -21,38 +21,37 @@ anomaly-detection/
 
 ## Quickstart
 
-### 1. Train on historical data
+### 1. Install dependencies
 ```bash
-python scripts/train.py \
-  --input path/to/historical.csv \
-  --output trained_model/ \
-  --target-fpr 0.02 \
-  --exclude-windows windows.json   # optional: labeled anomaly windows
+pip install -r requirements.txt
 ```
 
-### 2. Detect on operational data
+### 2. Train on historical data
 ```bash
-python scripts/detect.py \
-  --input path/to/operational.csv \
+python anomaly-detection/scripts/train.py \
+  --input data/historical.csv \
+  --output trained_model/ \
+  --target-fpr 0.02 \
+  --exclude-windows data/windows.json   # optional: labeled anomaly windows
+```
+
+### 3. Detect on operational data
+```bash
+python anomaly-detection/scripts/detect.py \
+  --input data/operational.csv \
   --model trained_model/ \
   --output reports/
 ```
 
-### 3. Optional: inspect a new dataset schema
+### 4. Inspect a new dataset schema
 ```bash
-python scripts/ingest.py --input path/to/data.csv
-```
-
-## Dependencies
-```
-pip install pandas numpy
+python anomaly-detection/scripts/ingest.py --input data/your_data.csv
 ```
 
 ## Output
 
-Every detection run produces a **Cybersecurity Incident Report** in both `.txt`
-and `.json` formats covering:
-- Alarm status, validity, and confidence
+Every detection run produces a **Cybersecurity Incident Report** in `.txt` and `.json`:
+- Alarm status, validity, and confidence band
 - Incident narrative and onset timestamp
 - Technical indicators with deviation magnitudes
 - Per-agent verdicts (Statistical, Behavioral, Correlation)
@@ -61,5 +60,4 @@ and `.json` formats covering:
 ## Dataset Compatibility
 
 The framework makes no assumptions about column names, units, or domain.
-Train it on any time-series CSV and it discovers structure automatically.
-
+Train it on any time-series CSV — structure is discovered automatically.
