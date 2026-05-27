@@ -4,7 +4,7 @@ ingest.py — Schema-agnostic CSV ingestion for the anomaly detection framework.
 
 Usage:
     # From train.py or detect.py — import and call:
-    from scripts.ingest import ingest, load_registry
+    from ingest import ingest, load_registry
 
     df, registry = ingest("path/to/data.csv")
 
