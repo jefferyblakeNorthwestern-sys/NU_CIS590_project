@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-ingest.py — Schema-agnostic CSV ingestion for the anomaly detection framework.
-
-Usage:
-    from ingest import ingest, load_registry, save_registry
-    df, registry = ingest("path/to/data.csv")
-"""
-
 import argparse
 import json
 import sys
@@ -21,15 +13,12 @@ def ingest(path: str, registry_path: str = None) -> tuple:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Input file not found: {path}")
-
     try:
         df = pd.read_csv(path, low_memory=False)
     except Exception as e:
         raise ValueError(f"Failed to parse CSV at {path}: {e}")
-
     if df.empty:
         raise ValueError(f"CSV at {path} is empty.")
-
     print(f"[ingest] Loaded {len(df)} rows x {len(df.columns)} columns from {path.name}")
 
     if registry_path:
@@ -45,14 +34,13 @@ def ingest(path: str, registry_path: str = None) -> tuple:
         registry["__timestamp_col__"] = ts_col
         print(f"[ingest] Timestamp column: '{ts_col}' | Range: {df[ts_col].min()} -> {df[ts_col].max()}")
     else:
-        print("[ingest] Warning: no timestamp column detected. Rows used in file order.")
+        print("[ingest] Warning: no timestamp column detected.")
 
     numeric_cols = [c for c, m in registry.items()
                     if isinstance(m, dict) and m.get("is_numeric") and not c.startswith("__")]
     binary_cols  = [c for c, m in registry.items()
                     if isinstance(m, dict) and m.get("is_binary") and not c.startswith("__")]
     print(f"[ingest] {len(numeric_cols)} numeric cols | {len(binary_cols)} binary/categorical cols")
-
     return df, registry
 
 
@@ -61,17 +49,13 @@ def _build_registry(df: pd.DataFrame) -> dict:
     for col in df.columns:
         series = df[col].dropna()
         if series.empty:
-            registry[col] = {
-                "dtype": str(df[col].dtype), "is_numeric": False,
-                "is_binary": False, "null_rate": 1.0,
-                "n_unique": 0, "sample_vals": []
-            }
+            registry[col] = {"dtype": str(df[col].dtype), "is_numeric": False,
+                             "is_binary": False, "null_rate": 1.0,
+                             "n_unique": 0, "sample_vals": []}
             continue
-
-        is_numeric = pd.api.types.is_numeric_dtype(df[col])
+        is_numeric  = pd.api.types.is_numeric_dtype(df[col])
         unique_vals = set(series.unique())
-        is_binary = unique_vals.issubset({0, 1, True, False, 0.0, 1.0})
-
+        is_binary   = unique_vals.issubset({0, 1, True, False, 0.0, 1.0})
         registry[col] = {
             "dtype":      str(df[col].dtype),
             "is_numeric": is_numeric,
@@ -80,25 +64,20 @@ def _build_registry(df: pd.DataFrame) -> dict:
             "n_unique":   int(df[col].nunique()),
             "sample_vals": [_safe_val(v) for v in series.head(3).tolist()],
         }
-
         if is_numeric and not is_binary:
             registry[col]["variance_class"] = _variance_class(series)
-
     return registry
 
 
 def _validate_against_existing(df: pd.DataFrame, registry: dict) -> dict:
     trained_cols = {k for k in registry if not k.startswith("__")}
     current_cols = set(df.columns)
-
     missing  = trained_cols - current_cols
     new_cols = current_cols - trained_cols
-
     if missing:
-        print(f"[ingest] Warning: {len(missing)} trained columns not in current CSV: {sorted(missing)}")
+        print(f"[ingest] Warning: {len(missing)} trained columns missing: {sorted(missing)}")
     if new_cols:
-        print(f"[ingest] Info: {len(new_cols)} new columns not in trained model: {sorted(new_cols)}")
-
+        print(f"[ingest] Info: {len(new_cols)} new columns not in model: {sorted(new_cols)}")
     for col in new_cols:
         series = df[col].dropna()
         registry[col] = {
@@ -110,7 +89,6 @@ def _validate_against_existing(df: pd.DataFrame, registry: dict) -> dict:
             "sample_vals": [_safe_val(v) for v in series.head(3).tolist()],
             "unmodeled":  True,
         }
-
     return registry
 
 
@@ -119,7 +97,6 @@ def _detect_timestamp_column(df: pd.DataFrame, registry: dict) -> Optional[str]:
         col = registry["__timestamp_col__"]
         if col in df.columns:
             return col
-
     for col in df.columns:
         if any(kw in col.lower() for kw in ("time", "date", "timestamp", "ts", "datetime")):
             try:
@@ -127,11 +104,9 @@ def _detect_timestamp_column(df: pd.DataFrame, registry: dict) -> Optional[str]:
                 return col
             except Exception:
                 continue
-
     for col in df.columns:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             return col
-
     return None
 
 
@@ -144,9 +119,9 @@ def _variance_class(series: pd.Series) -> str:
 
 
 def _safe_val(v):
-    if isinstance(v, (np.integer,)):  return int(v)
-    if isinstance(v, (np.floating,)): return float(v)
-    if isinstance(v, (np.bool_,)):    return bool(v)
+    if isinstance(v, np.integer):  return int(v)
+    if isinstance(v, np.floating): return float(v)
+    if isinstance(v, np.bool_):    return bool(v)
     return v
 
 
@@ -167,26 +142,12 @@ def save_registry(registry: dict, output_dir: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Inspect and register a CSV dataset.")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--input",    required=True)
     parser.add_argument("--output",   default=None)
     parser.add_argument("--registry", default=None)
     args = parser.parse_args()
-
     df, registry = ingest(args.input, registry_path=args.registry)
-
-    print("\n-- Column Registry --")
-    for col, meta in registry.items():
-        if col.startswith("__") or not isinstance(meta, dict):
-            continue
-        flags = []
-        if meta.get("is_numeric"): flags.append("numeric")
-        if meta.get("is_binary"):  flags.append("binary")
-        if meta.get("unmodeled"):  flags.append("UNMODELED")
-        vc = meta.get("variance_class", "")
-        print(f"  {col:<30} {', '.join(flags) or 'categorical':<20} {vc}")
-
     if args.output:
         save_registry(registry, args.output)
-
     sys.exit(0)
