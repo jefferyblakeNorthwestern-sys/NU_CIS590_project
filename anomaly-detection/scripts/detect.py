@@ -366,7 +366,7 @@ def orchestrate(verdicts: list, signals: list, thresholds: dict,
     flagged_cols = set(s["column"] for s in signals)
     mutual_flags = {s["column"] for s in signals if s["filter"] == "mutual_deviation"}
     pair_breakdowns = []
-    for k, pair in model_dir["correlation_map"].items():
+    for k, pair in model_dict["correlation_map"].items():
         if (pair["col_a"] in flagged_cols or pair["col_b"] in flagged_cols) and \
            (pair["col_a"] in mutual_flags or pair["col_b"] in mutual_flags):
             pair_breakdowns.append(pair)
@@ -527,8 +527,23 @@ def format_report(r: dict, df: pd.DataFrame, data_source: str,
     ]
 
     lines.append(sep("SECTION 6 — METADATA"))
+    lines += [
+        f"  Data source:          {Path(data_source).name}",
+        f"  Records analyzed:     {len(df)}",
+        f"  Window:               {window_start} -> {window_end}",
+        f"  Detection timestamp:  {r['generated']}",
+        f"  Report ID:            {r['report_id']}",
+        f"  Total signals fired:  {len(r['signals'])}",
+        f"    HIGH:               {sum(1 for s in r['signals'] if s['severity'] == 'high')}",
+        f"    MEDIUM:             {sum(1 for s in r['signals'] if s['severity'] == 'medium')}",
+        f"    LOW:                {sum(1 for s in r['signals'] if s['severity'] == 'low')}",
+        f"  Pattern matches:      {len(r['pattern_matches'])}",
+        f"  Alarm threshold:      {r['alarm_threshold']}",
+        "",
+        "=" * 72,
+    ]
 
-    return "\n".join(lines) + "\n" + "═" * 72
+    return "\n".join(lines)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -583,7 +598,7 @@ def main():
 
     # Pass model dict reference for pair breakdown lookup
     result = orchestrate(verdicts, signals, model["thresholds"],
-                         pattern_matches, df, registry, model)
+                         pattern_matches, df, registry, model_dict=model)
 
     # Format and save
     report_text = format_report(result, df, args.input, window_start, window_end)
