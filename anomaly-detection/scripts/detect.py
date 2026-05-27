@@ -25,7 +25,7 @@ import numpy as np
 
 from ingest import ingest
 from train  import (run_deterministic, get_numeric_cols,
-                             get_binary_cols, split)
+                    get_binary_cols, split)
 
 
 # ── Load model artifacts ──────────────────────────────────────────────────────
