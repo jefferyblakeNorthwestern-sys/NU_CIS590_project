@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.ingest import ingest, save_registry
+from ingest import ingest, save_registry
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
