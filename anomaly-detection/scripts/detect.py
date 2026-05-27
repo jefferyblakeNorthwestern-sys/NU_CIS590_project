@@ -23,8 +23,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from scripts.ingest import ingest
-from scripts.train  import (run_deterministic, get_numeric_cols,
+from ingest import ingest
+from train  import (run_deterministic, get_numeric_cols,
                              get_binary_cols, split)
 
 
@@ -380,7 +380,6 @@ def orchestrate(verdicts: list, signals: list, thresholds: dict,
         "fused_confidence":   round(fused, 3),
         "alarm_valid":        alarm_valid,
         "alarm_threshold":    alarm_threshold,
-        "thresholds":         thresholds,
         "validity":           validity,
         "anomaly_class":      anomaly_class,
         "confidence_band":    band,
@@ -528,24 +527,8 @@ def format_report(r: dict, df: pd.DataFrame, data_source: str,
     ]
 
     lines.append(sep("SECTION 6 — METADATA"))
-    lines += [
-        f"  Model artifacts:      {model_dir if isinstance(model_dir, str) else 'trained_model/'}",
-        f"  Detection cycle:      {r['generated']}",
-        f"  Data source:          {Path(data_source).name}",
-        f"  Records analyzed:     {len(df)}",
-        f"  Window:               {window_start} -> {window_end}",
-        f"  Total signals fired:  {len(r['signals'])}",
-        f"    HIGH:               {sum(1 for s in r['signals'] if s['severity'] == 'high')}",
-        f"    MEDIUM:             {sum(1 for s in r['signals'] if s['severity'] == 'medium')}",
-        f"    LOW:                {sum(1 for s in r['signals'] if s['severity'] == 'low')}",
-        f"  Pattern library:      {len(r['pattern_matches'])} matches found",
-        f"  Alarm threshold:      {r['alarm_threshold']}",
-        f"  z_score_cutoff:       {r.get('thresholds', {}).get('z_score_cutoff', 'N/A')}",
-        "",
-        "═" * 72,
-    ]
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n" + "═" * 72
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
