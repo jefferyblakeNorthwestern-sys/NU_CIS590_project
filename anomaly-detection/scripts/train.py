@@ -29,18 +29,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ingest import ingest, save_registry
+from scripts.ingest import ingest, save_registry
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def get_numeric_cols(registry: dict) -> list:
     return [c for c, m in registry.items()
-            if m.get("is_numeric") and not m.get("is_binary") and not c.startswith("__")]
+            if isinstance(m, dict) and m.get("is_numeric") and not m.get("is_binary") and not c.startswith("__")]
 
 def get_binary_cols(registry: dict) -> list:
     return [c for c, m in registry.items()
-            if m.get("is_binary") and not c.startswith("__")]
+            if isinstance(m, dict) and m.get("is_binary") and not c.startswith("__")]
 
 
 # ── Cycle 1 — Baseline Fitting ─────────────────────────────────────────────────
