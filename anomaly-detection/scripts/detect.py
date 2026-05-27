@@ -305,7 +305,7 @@ def _nominal_verdict(agent: str) -> dict:
 
 def orchestrate(verdicts: list, signals: list, thresholds: dict,
                 pattern_matches: list, df: pd.DataFrame,
-                registry: dict, model_dir: str) -> dict:
+                registry: dict, model_dict: dict) -> dict:
 
     # Confidence fusion
     confs = [v["confidence"] for v in verdicts]
@@ -598,7 +598,7 @@ def main():
 
     # Pass model dict reference for pair breakdown lookup
     result = orchestrate(verdicts, signals, model["thresholds"],
-                         pattern_matches, df, registry, model_dict=model)
+                         pattern_matches, df, registry, model)
 
     # Format and save
     report_text = format_report(result, df, args.input, window_start, window_end)
