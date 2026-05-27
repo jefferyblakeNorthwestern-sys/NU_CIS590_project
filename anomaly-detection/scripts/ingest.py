@@ -1,10 +1,11 @@
+from typing import Optional
 #!/usr/bin/env python3
 """
 ingest.py — Schema-agnostic CSV ingestion for the anomaly detection framework.
 
 Usage:
     # From train.py or detect.py — import and call:
-    from ingest import ingest, load_registry
+    from scripts.ingest import ingest, load_registry
 
     df, registry = ingest("path/to/data.csv")
 
@@ -41,7 +42,6 @@ def ingest(path: str, registry_path: str = None) -> tuple:
     try:
         df = pd.read_csv(
             path,
-            infer_datetime_format=True,
             low_memory=False,
         )
     except Exception as e:
@@ -62,7 +62,7 @@ def ingest(path: str, registry_path: str = None) -> tuple:
     # Identify and parse timestamp column
     ts_col = _detect_timestamp_column(df, registry)
     if ts_col:
-        df[ts_col] = pd.to_datetime(df[ts_col], infer_datetime_format=True, errors="coerce")
+        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
         df = df.sort_values(ts_col).reset_index(drop=True)
         registry["__timestamp_col__"] = ts_col
         print(f"[ingest] Timestamp column: '{ts_col}' | Range: {df[ts_col].min()} → {df[ts_col].max()}")
@@ -141,7 +141,7 @@ def _validate_against_existing(df: pd.DataFrame, registry: dict) -> dict:
     return registry
 
 
-def _detect_timestamp_column(df: pd.DataFrame, registry: dict) -> str | None:
+def _detect_timestamp_column(df: pd.DataFrame, registry: dict) -> Optional[str]:
     """Heuristically identify the timestamp column."""
     # Already set
     if "__timestamp_col__" in registry:
@@ -153,7 +153,7 @@ def _detect_timestamp_column(df: pd.DataFrame, registry: dict) -> str | None:
     for col in df.columns:
         if any(kw in col.lower() for kw in ("time", "date", "timestamp", "ts", "datetime")):
             try:
-                pd.to_datetime(df[col].head(10), infer_datetime_format=True, errors="raise")
+                pd.to_datetime(df[col].head(10), errors="raise")
                 return col
             except Exception:
                 continue
