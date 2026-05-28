@@ -1,0 +1,8 @@
+﻿ID,Starting Time [dd/mm/YY HH],Ending Time [dd/mm/YY HH],Duration (hours),Attack Description,SCADA Concealment
+8,16/01/2017 09,19/01/2017 06,70,Attacker changes L_T3 thresholds (which control PU4/PU5) by gaining control of PLC3. Low levels in T3.,"Replay attack on L_T3, as well as PU4/PU5 flow and status."
+9,30/01/2017 08,02/02/2017 00,65,"Attack alters L_T2 readings arriving to PLC3, which reads a low level and keeps valve V2 OPEN, leading T2 to overflow.",Polyline to offset L_T2 increase.
+10,09/02/2017 03,10/02/2017 09,31,Malicious activation of pump PU3,None listed
+11,12/02/2017 01,13/02/2017 07,31,Similar to Attack #10,None listed
+12,24/02/2017 05,28/02/2017 08,100,Similar to Attack #9,"Replay attack on L_T2, V2 flow and status, as well as V2 inlet + outlet pressure readings (P_J14, P_J422)."
+13,10/03/2017 14,13/03/2017 21,80,"Attacker changes L_T7 thresholds (which control PU10/PU11) by gaining control of PLC5, causing the pumps to switch ON/OFF continuously.","Replay attack on L_T7, PU10/PU11 flow and status, as well as inlet + outlet pressure readings (P_J14, P_J422). Inlet pressure concealment terminates before that of other variables."
+14,25/03/2017 20,27/03/2017 01,30,Alteration of T4 signal arriving to PLC6. Overflow in T6.,None listed

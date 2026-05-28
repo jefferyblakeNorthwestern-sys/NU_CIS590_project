@@ -1,0 +1,8 @@
+﻿ID,Starting Time (dd/mm/YY HH),Ending Time (dd/mm/YY HH),Duration (hours),Attack Description,SCADA Concealment,Labeled (hours)
+1,13/09/2016 23,16/09/2016 00,50,Attacker changes L_T7 thresholds (which controls PU10/PU11) by altering SCADA transmission to PLC9. Low levels in T7.,Replay attack on L_T7.,42
+2,26/09/2016 11,27/09/2016 10,24,Like Attack #1.,Like Attack #1 but replay attack extended to PU10/PU11 flow and status.,0
+3,09/10/2016 09,11/10/2016 20,60,"Attack alters L_T1 readings sent by PLC2 to PLC1, which reads a constant low level and keeps pumps PU1/PU2 ON. Overflow in T1.",Polyline to offset L_T1 increase.,60
+4,29/10/2016 19,02/11/2016 16,94,Like Attack #3.,"Replay attack on L_T1, PU1/PU2 flow and status, as well as pressure at pumps outlet.",37
+5,26/11/2016 17,29/11/2016 04,60,Working speed of PU7 reduced to 0.9 of nominal speed causes lower water levels in T4.,None listed.,7
+6,06/12/2016 07,10/12/2016 04,94,"Like Attack #5, but speed reduced to 0.7.",L_T4 drop concealed with replay attack.,73
+7,14/12/2016 15,19/12/2016 04,110,Like Attack #6.,"Replay attack on L_T1, as well as PU1/PU2 flow and status.",0
