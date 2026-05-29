@@ -10,8 +10,8 @@ Usage:
         --output-dir      data/
 
 Produces:
-    data/dataset2_windows.json
-    data/test_windows.json
+    data/BATADAL_dataset2_windows.json
+    data/BATADAL_test_windows.json
 """
 
 import argparse
@@ -23,10 +23,6 @@ import pandas as pd
 
 
 def parse_attack_list(csv_path: str) -> list:
-    """
-    Read a BATADAL attack list CSV and return a list of window dicts
-    in the format expected by train.py --exclude-windows.
-    """
     df = pd.read_csv(csv_path)
     df.columns = [c.strip() for c in df.columns]
 
@@ -70,14 +66,14 @@ def main():
 
     print(f"\nParsing {args.dataset2_labels} ...")
     d2_windows = parse_attack_list(args.dataset2_labels)
-    d2_path = out_dir / "dataset2_windows.json"
+    d2_path = out_dir / "BATADAL_dataset2_windows.json"
     with open(d2_path, "w") as f:
         json.dump(d2_windows, f, indent=2)
     print(f"  -> {d2_path}  ({len(d2_windows)} windows)")
 
     print(f"\nParsing {args.test_labels} ...")
     test_windows = parse_attack_list(args.test_labels)
-    test_path = out_dir / "test_windows.json"
+    test_path = out_dir / "BATADAL_test_windows.json"
     with open(test_path, "w") as f:
         json.dump(test_windows, f, indent=2)
     print(f"  -> {test_path}  ({len(test_windows)} windows)")
