@@ -1,26 +1,13 @@
 #!/usr/bin/env python3
 """
 score.py -- Score detection reports against BATADAL ground truth attack labels.
-Supports full pipeline scoring, ablation study, and agent disagreement analysis.
 
 Usage:
-    # Score a single report
     python3 anomaly-detection/scripts/score.py \
         --reports reports/run5/ \
         --labels data/BATADAL_test_attack_list.csv \
-        --data data/BATADAL_test_dataset.CSV
-
-    # Full ablation study
-    python3 anomaly-detection/scripts/score.py \
-        --reports reports/run5/ \
-        --labels data/BATADAL_test_attack_list.csv \
-        --data data/BATADAL_test_dataset.CSV --ablation --detail
-
-    # Agent disagreement analysis
-    python3 anomaly-detection/scripts/score.py \
-        --reports reports/run5/ \
-        --labels data/BATADAL_test_attack_list.csv \
-        --data data/BATADAL_test_dataset.CSV --disagreement
+        --data data/BATADAL_test_dataset.CSV \
+        [--ablation] [--detail] [--disagreement]
 """
 
 import argparse
@@ -32,21 +19,18 @@ import pandas as pd
 import numpy as np
 
 
-# -- Parse attack label file ---------------------------------------------------
-
 def load_attack_windows(labels_path):
     df = pd.read_csv(labels_path)
     df.columns = [c.strip() for c in df.columns]
     start_col = next(c for c in df.columns if "Starting" in c or "Start" in c)
-    end_col   = next(c for c in df.columns if "Ending"   in c or "End"   in c)
+    end_col   = next(c for c in df.columns if "Ending" in c or "End" in c)
     id_col    = next(c for c in df.columns if c.strip() == "ID")
     desc_col  = next((c for c in df.columns if "Description" in c), None)
-
     windows = []
     for _, row in df.iterrows():
         try:
             start = pd.to_datetime(str(row[start_col]).strip(), dayfirst=True)
-            end   = pd.to_datetime(str(row[end_col]).strip(),   dayfirst=True)
+            end   = pd.to_datetime(str(row[end_col]).strip(), dayfirst=True)
             windows.append({
                 "id":          int(row[id_col]),
                 "start":       start,
@@ -55,13 +39,10 @@ def load_attack_windows(labels_path):
                 "description": str(row[desc_col]).strip() if desc_col else "",
             })
         except Exception as e:
-            print(f"  [score] Warning: could not parse row: {e}")
-
-    print(f"[score] Loaded {len(windows)} attack windows from {Path(labels_path).name}")
+            print("  [score] Warning: could not parse row: " + str(e))
+    print("[score] Loaded " + str(len(windows)) + " attack windows from " + Path(labels_path).name)
     return windows
 
-
-# -- Build ground truth series -------------------------------------------------
 
 def build_ground_truth(df, ts_col, attack_windows):
     labels = pd.Series(0, index=df.index)
@@ -70,8 +51,6 @@ def build_ground_truth(df, ts_col, attack_windows):
         labels[mask] = 1
     return labels
 
-
-# -- Score signals against ground truth ----------------------------------------
 
 def score_signals(signals, df, ts_col, attack_windows, config_name):
     ground_truth = build_ground_truth(df, ts_col, attack_windows)
@@ -89,7 +68,7 @@ def score_signals(signals, df, ts_col, attack_windows, config_name):
             if w["start"] <= ts <= w["end"]:
                 first_alert = ts
                 break
-        tp = first_alert is not None
+        tp    = first_alert is not None
         ttd_h = int((first_alert - w["start"]).total_seconds() / 3600) if tp else None
         attack_results.append({
             "attack_id":   w["id"],
@@ -110,14 +89,13 @@ def score_signals(signals, df, ts_col, attack_windows, config_name):
         if ts in df[ts_col].values and
         ground_truth[df[df[ts_col] == ts].index].values[0] == 0
     )
-
     recall    = tp_count / n_attacks if n_attacks > 0 else 0.0
     precision = tp_count / (tp_count + fp_count) if (tp_count + fp_count) > 0 else 0.0
     f1        = (2 * precision * recall / (precision + recall)
                  if (precision + recall) > 0 else 0.0)
-    ttd_values   = [r["ttd_hours"] for r in attack_results if r["ttd_hours"] is not None]
-    mean_ttd     = round(sum(ttd_values) / len(ttd_values), 1) if ttd_values else None
-    median_ttd   = round(float(np.median(ttd_values)), 1)       if ttd_values else None
+    ttd_vals  = [r["ttd_hours"] for r in attack_results if r["ttd_hours"] is not None]
+    mean_ttd  = round(sum(ttd_vals) / len(ttd_vals), 1) if ttd_vals else None
+    med_ttd   = round(float(np.median(ttd_vals)), 1)    if ttd_vals else None
 
     return {
         "config":        config_name,
@@ -128,96 +106,9 @@ def score_signals(signals, df, ts_col, attack_windows, config_name):
         "precision":     round(precision, 3),
         "f1":            round(f1, 3),
         "mean_ttd_h":    mean_ttd,
-        "median_ttd_h":  median_ttd,
+        "median_ttd_h":  med_ttd,
         "attack_detail": attack_results,
     }
-
-
-# -- Disagreement analysis -----------------------------------------------------
-
-def analyze_disagreement(reports, attack_windows, df, ts_col):
-    """
-    For each attack window, extract each agent's confidence and alarm_valid
-    from the report verdicts. Identify and categorize disagreement patterns.
-    """
-    agent_names = ["statistical", "behavioral", "correlation"]
-    results = []
-
-    for w in attack_windows:
-        window_result = {
-            "attack_id":   w["id"],
-            "start":       str(w["start"]),
-            "end":         str(w["end"]),
-            "duration_h":  w["duration_h"],
-            "description": w["description"][:60],
-            "agents":      {},
-            "pattern":     None,
-            "unanimous":   None,
-            "agreement_count": 0,
-        }
-
-        # Find report(s) whose analysis window overlaps this attack window
-        # Use all reports and pick the one with signals in this window
-        best_report = None
-        best_signal_count = 0
-        for report in reports:
-            signals_in_window = [
-                s for s in report.get("signals", [])
-                if _ts_in_window(s.get("timestamp"), w["start"], w["end"])
-            ]
-            if len(signals_in_window) > best_signal_count:
-                best_signal_count = len(signals_in_window)
-                best_report = report
-
-        if best_report is None:
-            best_report = reports[0]  # fallback to first report
-
-        # Extract per-agent verdicts
-        verdicts = best_report.get("verdicts", [])
-        alarming = []
-        for agent in agent_names:
-            v = next((x for x in verdicts if x["agent"] == agent), None)
-            if v:
-                conf         = round(v.get("confidence", 0.0), 3)
-                alarm_valid  = v.get("alarm_valid", False)
-                anomaly_class = v.get("anomaly_class", "unknown")
-                window_result["agents"][agent] = {
-                    "confidence":    conf,
-                    "alarm_valid":   alarm_valid,
-                    "anomaly_class": anomaly_class,
-                }
-                if alarm_valid:
-                    alarming.append(agent)
-            else:
-                window_result["agents"][agent] = {
-                    "confidence":    0.0,
-                    "alarm_valid":   False,
-                    "anomaly_class": "unknown",
-                }
-
-        n_alarming = len(alarming)
-        window_result["agreement_count"] = n_alarming
-        window_result["alarming_agents"] = alarming
-
-        # Classify disagreement pattern
-        if n_alarming == 3:
-            window_result["pattern"] = "unanimous_alarm"
-            window_result["unanimous"] = True
-        elif n_alarming == 0:
-            window_result["pattern"] = "unanimous_no_alarm"
-            window_result["unanimous"] = True
-        elif n_alarming == 2:
-            dissenter = [a for a in agent_names if a not in alarming][0]
-            window_result["pattern"] = f"majority_alarm_dissent_{dissenter}"
-            window_result["unanimous"] = False
-        else:
-            lone = alarming[0]
-            window_result["pattern"] = f"lone_alarm_{lone}"
-            window_result["unanimous"] = False
-
-        results.append(window_result)
-
-    return results
 
 
 def _ts_in_window(ts_str, start, end):
@@ -228,65 +119,162 @@ def _ts_in_window(ts_str, start, end):
         return False
 
 
+def analyze_disagreement(reports, attack_windows, df, ts_col):
+    agent_names = ["statistical", "behavioral", "correlation"]
+    results = []
+
+    for w in attack_windows:
+        # Find best matching report for this window
+        best_report = reports[0]
+        best_count  = 0
+        for report in reports:
+            count = sum(
+                1 for s in report.get("signals", [])
+                if _ts_in_window(s.get("timestamp"), w["start"], w["end"])
+            )
+            if count > best_count:
+                best_count  = count
+                best_report = report
+
+        verdicts   = best_report.get("verdicts", [])
+        agents_out = {}
+        alarming   = []
+
+        for agent in agent_names:
+            v = next((x for x in verdicts if x["agent"] == agent), None)
+            if v:
+                conf  = round(v.get("confidence", 0.0), 3)
+                alarm = v.get("alarm_valid", False)
+                aclass = v.get("anomaly_class", "unknown")
+                agents_out[agent] = {"confidence": conf, "alarm_valid": alarm, "anomaly_class": aclass}
+                if alarm:
+                    alarming.append(agent)
+            else:
+                agents_out[agent] = {"confidence": 0.0, "alarm_valid": False, "anomaly_class": "unknown"}
+
+        n_alarming = len(alarming)
+
+        if n_alarming == 3:
+            pattern   = "unanimous_alarm"
+            unanimous = True
+        elif n_alarming == 0:
+            pattern   = "unanimous_no_alarm"
+            unanimous = True
+        elif n_alarming == 2:
+            dissenter = [a for a in agent_names if a not in alarming][0]
+            pattern   = "majority_alarm_dissent_" + dissenter
+            unanimous = False
+        else:
+            pattern   = "lone_alarm_" + alarming[0]
+            unanimous = False
+
+        results.append({
+            "attack_id":       w["id"],
+            "start":           str(w["start"]),
+            "end":             str(w["end"]),
+            "duration_h":      w["duration_h"],
+            "description":     w["description"][:60],
+            "agents":          agents_out,
+            "alarming_agents": alarming,
+            "agreement_count": n_alarming,
+            "pattern":         pattern,
+            "unanimous":       unanimous,
+        })
+
+    return results
+
+
 def print_disagreement(results):
-    print()
-    print("=" * 90)
+    agent_names = ["statistical", "behavioral", "correlation"]
+    print("")
+    print("=" * 100)
     print("  AGENT DISAGREEMENT ANALYSIS")
-    print("=" * 90)
-    print(f"  {'Attack':<8} {'Pattern':<40} {'Stat':>6} {'Behav':>6} {'Corr':>6} {'Agree':>6}")
-    print("  " + "-" * 86)
+    print("=" * 100)
+    print("  Attack   Pattern                                    Stat        Behav       Corr        Agree")
+    print("  " + "-" * 96)
 
     for r in results:
         agents = r["agents"]
-        stat_conf  = agents.get("statistical",  {}).get("confidence", 0.0)
-        behav_conf = agents.get("behavioral",   {}).get("confidence", 0.0)
-        corr_conf  = agents.get("correlation",  {}).get("confidence", 0.0)
-        stat_alarm  = "Y" if agents.get("statistical",  {}).get("alarm_valid") else "N"
-        behav_alarm = "Y" if agents.get("behavioral",   {}).get("alarm_valid") else "N"
-        corr_alarm  = "Y" if agents.get("correlation",  {}).get("alarm_valid") else "N"
+        rows = []
+        for agent in agent_names:
+            a     = agents.get(agent, {})
+            conf  = a.get("confidence", 0.0)
+            alarm = "Y" if a.get("alarm_valid") else "N"
+            rows.append(str(round(conf, 2)) + alarm)
 
-        print(f"  Attack {r['attack_id']:>2}  {r['pattern']:<40} "
-              f"{stat_conf:>4.2f}{stat_alarm}  {behav_conf:>4.2f}{behav_alarm}  "
-              f"{corr_conf:>4.2f}{corr_alarm}  {r['agreement_count']}/3")
+        print("  Attack {:>2}  {:<45} {:<10} {:<10} {:<10} {}/3".format(
+            r["attack_id"],
+            r["pattern"],
+            rows[0], rows[1], rows[2],
+            r["agreement_count"]
+        ))
 
-    print("=" * 90)
+    print("=" * 100)
+    print("")
 
-    # Summary statistics
     unanimous     = sum(1 for r in results if r["unanimous"])
     disagreements = [r for r in results if not r["unanimous"]]
     patterns      = {}
     for r in disagreements:
         patterns[r["pattern"]] = patterns.get(r["pattern"], 0) + 1
 
-    print(f"
-  Unanimous verdicts:    {unanimous}/{len(results)}")
-    print(f"  Disagreements:         {len(disagreements)}/{len(results)}")
+    print("  Summary:")
+    print("  Unanimous verdicts : " + str(unanimous) + "/" + str(len(results)))
+    print("  Disagreements      : " + str(len(disagreements)) + "/" + str(len(results)))
+
     if patterns:
         print("  Disagreement patterns:")
         for pat, count in sorted(patterns.items(), key=lambda x: -x[1]):
-            print(f"    {pat:<45} {count}x")
+            print("    " + pat + " : " + str(count) + "x")
 
-    # Per-agent alarm rate
-    print()
-    for agent in ["statistical", "behavioral", "correlation"]:
+    print("")
+    print("  Per-agent statistics across all attack windows:")
+    for agent in agent_names:
         alarmed = sum(1 for r in results if r["agents"].get(agent, {}).get("alarm_valid"))
         confs   = [r["agents"].get(agent, {}).get("confidence", 0.0) for r in results]
-        print(f"  {agent.capitalize():<14} alarmed {alarmed}/{len(results)} windows  "
-              f"mean_conf={round(sum(confs)/len(confs), 3) if confs else 0:.3f}  "
-              f"max_conf={max(confs) if confs else 0:.3f}  "
-              f"min_conf={min(confs) if confs else 0:.3f}")
-    print()
+        mean_c  = round(sum(confs) / len(confs), 3) if confs else 0.0
+        max_c   = round(max(confs), 3) if confs else 0.0
+        min_c   = round(min(confs), 3) if confs else 0.0
+        print("  " + agent.capitalize().ljust(16) +
+              " alarmed=" + str(alarmed) + "/" + str(len(results)) +
+              "  mean_conf=" + str(mean_c) +
+              "  max=" + str(max_c) +
+              "  min=" + str(min_c))
+    print("")
 
 
-# -- Ablation signal extractors ------------------------------------------------
+def print_table(results):
+    print("")
+    print("=" * 90)
+    print("  ABLATION STUDY RESULTS")
+    print("=" * 90)
+    print("  {:<30} {:>4} {:>4} {:>4} {:>8} {:>10} {:>6} {:>10}".format(
+        "Configuration", "TP", "FN", "FP", "Recall", "Precision", "F1", "Mean TTD"))
+    print("  " + "-" * 86)
+    for r in results:
+        ttd = str(r["mean_ttd_h"]) + "h" if r["mean_ttd_h"] is not None else "N/A"
+        print("  {:<30} {:>4} {:>4} {:>4} {:>8.3f} {:>10.3f} {:>6.3f} {:>10}".format(
+            r["config"], r["tp"], r["fn"], r["fp"],
+            r["recall"], r["precision"], r["f1"], ttd))
+    print("=" * 90)
+
+
+def print_attack_detail(result):
+    print("  Per-attack detail -- " + result["config"])
+    print("  " + "-" * 80)
+    for a in result["attack_detail"]:
+        status = "DETECTED" if a["detected"] else "MISSED  "
+        ttd    = "TTD=" + str(a["ttd_hours"]) + "h" if a["ttd_hours"] is not None else "TTD=N/A"
+        print("  Attack {:>2}  {}  {:<12}  {}".format(
+            a["attack_id"], status, ttd, a["description"]))
+
 
 def signals_deterministic_only(report):
     return report.get("signals", [])
 
 def signals_single_agent(report, agent_name):
-    verdicts = report.get("verdicts", [])
-    agent = next((v for v in verdicts if v["agent"] == agent_name), None)
-    if agent and agent.get("alarm_valid"):
+    v = next((x for x in report.get("verdicts", []) if x["agent"] == agent_name), None)
+    if v and v.get("alarm_valid"):
         return report.get("signals", [])
     return []
 
@@ -299,34 +287,6 @@ def signals_zscore_baseline(report):
     return [s for s in report.get("signals", [])
             if s.get("filter") == "zscore" and s.get("severity") == "high"]
 
-
-# -- Print table ---------------------------------------------------------------
-
-def print_table(results):
-    print()
-    print("=" * 90)
-    print("  ABLATION STUDY RESULTS")
-    print("=" * 90)
-    print(f"  {'Configuration':<30} {'TP':>4} {'FN':>4} {'FP':>4} {'Recall':>8} {'Precision':>10} {'F1':>6} {'Mean TTD':>10}")
-    print("  " + "-" * 86)
-    for r in results:
-        ttd = f"{r['mean_ttd_h']}h" if r['mean_ttd_h'] is not None else "N/A"
-        print(f"  {r['config']:<30} {r['tp']:>4} {r['fn']:>4} {r['fp']:>4} "
-              f"{r['recall']:>8.3f} {r['precision']:>10.3f} {r['f1']:>6.3f} {ttd:>10}")
-    print("=" * 90)
-
-
-def print_attack_detail(result):
-    print(f"
-  Per-attack detail -- {result['config']}")
-    print("  " + "-" * 80)
-    for a in result["attack_detail"]:
-        status = "DETECTED" if a["detected"] else "MISSED  "
-        ttd    = f"TTD={a['ttd_hours']}h" if a["ttd_hours"] is not None else "TTD=N/A"
-        print(f"  Attack {a['attack_id']:>2}  {status}  {ttd:<10}  {a['description']}")
-
-
-# -- Main ----------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
@@ -352,10 +312,10 @@ def main():
     report_dir   = Path(args.reports)
     report_files = sorted(report_dir.glob("report_*.json"))
     if not report_files:
-        print(f"[score] No report JSON files found in {report_dir}")
+        print("[score] No report JSON files found in " + str(report_dir))
         sys.exit(1)
 
-    print(f"[score] Found {len(report_files)} report(s) in {report_dir}")
+    print("[score] Found " + str(len(report_files)) + " report(s) in " + str(report_dir))
 
     all_reports = []
     all_signals = []
@@ -365,21 +325,16 @@ def main():
         all_reports.append(report)
         all_signals.extend(report.get("signals", []))
 
-    print(f"[score] Total signals: {len(all_signals)}")
+    print("[score] Total signals: " + str(len(all_signals)))
 
-    # Disagreement analysis
     if args.disagreement:
-        disagreement_results = analyze_disagreement(
-            all_reports, attack_windows, df, ts_col
-        )
-        print_disagreement(disagreement_results)
-
+        dis_results = analyze_disagreement(all_reports, attack_windows, df, ts_col)
+        print_disagreement(dis_results)
         out_path = report_dir / "disagreement_results.json"
         with open(out_path, "w") as f:
-            json.dump(disagreement_results, f, indent=2, default=str)
-        print(f"[score] Disagreement results saved -> {out_path}")
+            json.dump(dis_results, f, indent=2, default=str)
+        print("[score] Disagreement results saved -> " + str(out_path))
 
-    # Ablation study
     if args.ablation or not args.disagreement:
         report = all_reports[0]
         configs = [
@@ -390,7 +345,6 @@ def main():
             ("5. Correlation agent only", signals_single_agent(report, "correlation")),
             ("6. Full pipeline",          signals_full_pipeline(report)),
         ]
-
         ablation_results = []
         for name, sigs in configs:
             result = score_signals(sigs, df, ts_col, attack_windows, name)
@@ -399,11 +353,10 @@ def main():
                 print_attack_detail(result)
 
         print_table(ablation_results)
-
         out_path = report_dir / "ablation_results.json"
         with open(out_path, "w") as f:
             json.dump(ablation_results, f, indent=2, default=str)
-        print(f"[score] Ablation results saved -> {out_path}")
+        print("[score] Ablation results saved -> " + str(out_path))
 
 
 if __name__ == "__main__":
